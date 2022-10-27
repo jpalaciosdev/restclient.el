@@ -31,6 +31,11 @@
   "An interactive HTTP client for Emacs."
   :group 'tools)
 
+(defcustom restclient-use-curl nil
+  "Use curl as HTTP request backend."
+  :group 'restclient
+  :type 'boolean)
+
 (defcustom restclient-log-request t
   "Log restclient requests to *Messages*."
   :group 'restclient
@@ -213,7 +218,7 @@
   "^<[ \t]*\\([^<>\n\r]+\\)[ \t]*$")
 
 (defconst restclient-content-type-regexp
-  "^Content-[Tt]ype: \\(\\w+\\)/\\(?:[^\\+\r\n]*\\+\\)*\\([^;\r\n]+\\)")
+  "^[Cc]ontent-[Tt]ype: \\(\\w+\\)/\\(?:[^\\+\r\n]*\\+\\)*\\([^;\r\n]+\\)")
 
 (defconst restclient-response-hook-regexp
   "^\\(->\\) \\([^[:space:]]+\\) +\\(.*\\)$")
@@ -238,6 +243,34 @@
       (setq ad-return-value nil)
     ad-do-it))
 (ad-activate 'url-http-user-agent-string)
+
+(defun restclient-http-do-curl (method url _headers _entity &rest handle-args)
+  (let* ((default-directory temporary-file-directory)
+         (args (restclient--build-curl-args))
+         (buf (generate-new-buffer "*restclient-curl*"))
+         (sentinel-fn (apply-partially #'restclient--curl-sentinel
+                                       (append (list '() method url restclient-same-buffer-response-name) handle-args)
+                                       buf)))
+    (with-current-buffer buf
+      (make-process :name "restclient-curl"
+                    :buffer (current-buffer)
+                    :coding 'binary
+                    :command (append '("curl" "-s") args)
+                    :connection-type 'pipe
+                    :sentinel sentinel-fn))))
+
+(defun restclient--curl-sentinel (handle-args buffer _process event)
+  "Handles curl process sentinel.
+HANDLE-ARGS is the args pass to `restclient-http-handle-response'
+PROCESS and EVENT is standard sentinel function args."
+  (if (string= event "finished\n")
+      (with-current-buffer buffer
+        (save-excursion
+          (goto-char (point-min))
+          (while (search-forward "\r" nil :noerror)
+            (replace-match "")))
+        (apply 'restclient-http-handle-response handle-args))
+    (error event)))
 
 (defun restclient-http-do (method url headers entity &rest handle-args)
   "Send ENTITY and HEADERS to URL as a METHOD request."
@@ -388,9 +421,9 @@ The buffer contains the raw HTTP response sent by the server."
 
 (defun restclient-decode-response (raw-http-response-buffer target-buffer-name same-name)
   "Decode the HTTP response using the charset (encoding) specified in the Content-Type header. If no charset is specified, default to UTF-8."
-  (let* ((charset-regexp "^Content-Type.*charset=\\([-A-Za-z0-9]+\\)")
+  (let* ((charset-regexp "^[Cc]ontent-[Tt]ype.*charset=\\([-A-Za-z0-9]+\\)")
          (image? (save-excursion
-                   (search-forward-regexp "^Content-Type.*[Ii]mage" nil t)))
+                   (search-forward-regexp "^[Cc]ontent-[Tt]ype.*[Ii]mage" nil t)))
          (encoding (if (save-excursion
                          (search-forward-regexp charset-regexp nil t))
                        (intern (downcase (match-string 1)))
@@ -581,9 +614,8 @@ bound to C-c C-r."
                (url (restclient-replace-all-in-string vars url)))
           (apply func method url headers entity args))))))
 
-(defun restclient-copy-curl-command ()
-  "Formats the request as a curl command and copies the command to the clipboard."
-  (interactive)
+(defun restclient--build-curl-args ()
+  "Build curl command for the request."
   (restclient-http-parse-current-and-do
    '(lambda (method url headers entity)
       (let ((header-args
@@ -591,23 +623,30 @@ bound to C-c C-r."
                     (mapcar (lambda (header)
                               (list "-H" (format "%s: %s" (car header) (cdr header))))
                             headers))))
-        (kill-new (concat "curl "
-                          (mapconcat 'shell-quote-argument
-                                     (append '("-i")
-                                             header-args
-                                             (list (concat "-X" method))
-                                             (list url)
-                                             (when (> (string-width entity) 0)
-                                               (list "-d" entity)))
-                                     " "))))
-      (message "curl command copied to clipboard."))))
+        (append '("-i")
+                header-args
+                (list (concat "-X" method))
+                (list url)
+                (when (> (string-width entity) 0)
+                  (list "-d" entity)))))))
 
+(defun restclient-copy-curl-command ()
+  "Formats the request as a curl command and copies the command to the clipboard."
+  (interactive)
+  (let ((args (restclient--build-curl-args)))
+    (kill-new (concat "curl " (mapconcat #'shell-quote-argument args " ")))
+    (message "curl command copied to clipboard.")))
 
 (defun restclient-elisp-result-function (args offset)
   (goto-char offset)
   (let ((form (macroexpand-all (read (current-buffer)))))
     (lambda ()
       (eval form))))
+
+(defun restclient--do-func ()
+  (if restclient-use-curl
+      #'restclient-http-do-curl
+    #'restclient-http-do))
 
 (restclient-register-result-func
  "run-hook" #'restclient-elisp-result-function
@@ -622,7 +661,7 @@ bound to C-c C-r."
 Optional argument RAW don't reformat response if t.
 Optional argument STAY-IN-WINDOW do not move focus to response buffer if t."
   (interactive)
-  (restclient-http-parse-current-and-do 'restclient-http-do raw stay-in-window suppress-response-buffer))
+  (restclient-http-parse-current-and-do (restclient--do-func) raw stay-in-window suppress-response-buffer))
 
 ;;;###autoload
 (defun restclient-http-send-current-raw ()
