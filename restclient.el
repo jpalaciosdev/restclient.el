@@ -12,19 +12,21 @@
 
 ;;; Commentary:
 ;;
-;; This is a tool to manually explore and test HTTP REST
-;; webservices.  Runs queries from a plain-text query sheet, displays
-;; results as a pretty-printed XML, JSON and even images.
+;; This is a tool to manually explore and test HTTP REST web services. Runs
+;; queries from a plain-text query sheet, displays results as a pretty-printed
+;; XML, JSON and even images.
 
 ;;; Code:
 ;;
-(require 'restclient-scratch)
 
 (require 'url)
 (require 'json)
 (require 'outline)
-(eval-when-compile (require 'subr-x))
+
+
 (eval-when-compile
+  (require 'subr-x)
+  (require 'org)
   (if (version< emacs-version "26")
       (require 'cl)
     (require 'cl-lib)))
@@ -95,7 +97,7 @@
   :type 'boolean)
 
 (defgroup restclient-faces nil
-  "Faces used in Restclient Mode"
+  "Faces used in Restclient Mode."
   :group 'restclient
   :group 'faces)
 
@@ -111,7 +113,7 @@
 
 (defface restclient-variable-elisp-face
   '((t (:inherit font-lock-function-name-face)))
-  "Face for variable value (Emacs lisp)."
+  "Face for variable value (Emacs Lisp)."
   :group 'restclient-faces)
 
 (defface restclient-variable-multiline-face
@@ -121,7 +123,10 @@
 
 (defface restclient-variable-usage-face
   '((t (:inherit restclient-variable-name-face)))
-  "Face for variable usage (only used when headers/body is represented as a single variable, not highlighted when variable appears in the middle of other text)."
+  "Face for variable usage.
+
+Only used when headers/body is represented as a single variable, not highlighted
+when variable appears in the middle of other text."
   :group 'restclient-faces)
 
 (defface restclient-method-face
@@ -131,7 +136,7 @@
 
 (defface restclient-url-face
   '((t (:inherit font-lock-function-name-face)))
-  "Face for variable value (Emacs lisp)."
+  "Face for variable value (Emacs Lisp)."
   :group 'restclient-faces)
 
 (defface restclient-file-upload-face
@@ -171,15 +176,16 @@
 (defvar restclient-request-time-end nil)
 
 (defvar restclient-var-overrides nil
-  "An alist of vars that will override any set in the file,
-  also where dynamic vars set on callbacks are stored.")
+  "An alist of vars that will override any set in the file.
+
+Also where dynamic vars set on callbacks are stored.")
 
 (defvar restclient-result-handlers '()
   "A registry of available completion hooks.
-   Stored as an alist of name -> (hook-creation-func . description)")
+Stored as an alist of name -> \\=(hook-creation-func . description)")
 
 (defvar restclient-curr-request-functions nil
-  "A list of functions to run once when the next request is loaded")
+  "A list of functions to run once when the next request is loaded.")
 
 (defvar restclient-response-loaded-hook nil
   "Hook run after response buffer is formatted.")
@@ -191,7 +197,10 @@
   "Hook run after data is loaded into response buffer.")
 
 (defcustom restclient-vars-max-passes 10
-  "Maximum number of recursive variable references. This is to prevent hanging if two variables reference each other directly or indirectly."
+  "Maximum number of recursive variable references.
+
+This is to prevent hanging if two variables reference each other directly or
+indirectly."
   :group 'restclient
   :type 'integer)
 
@@ -391,6 +400,7 @@ PROCESS and EVENT is standard sentinel function args."
 
           (goto-char (point-max))
           (or (eq (point) (point-min)) (insert "\n"))
+
           (unless restclient-response-body-only
             (let ((hstart (point)))
               (insert method " " url "\n" headers)
@@ -428,17 +438,22 @@ The buffer contains the raw HTTP response sent by the server."
             (switch-to-buffer-other-window (current-buffer))))))))
 
 (defun restclient-decode-response (raw-http-response-buffer target-buffer-name same-name)
-  "Decode the HTTP response using the charset (encoding) specified in the Content-Type header. If no charset is specified, default to UTF-8."
+  "Decode the HTTP response in RAW-HTTP-RESPONSE-BUFFER.
+
+This uses the charset (encoding) specified in the Content-Type header. If no
+charset is specified, defaults to UTF-8.
+
+Store results in TARGET-BUFFER-NAME. Make it unique if SAME-NAME is non-nil."
   (let* ((charset-regexp "^[Cc]ontent-[Tt]ype.*charset=\\([-A-Za-z0-9]+\\)")
-         (image? (save-excursion
-                   (search-forward-regexp "^[Cc]ontent-[Tt]ype.*[Ii]mage" nil t)))
+         (image-p (save-excursion
+                    (search-forward-regexp "^[Cc]ontent-[Tt]ype.*[Ii]mage" nil t)))
          (encoding (if (save-excursion
                          (search-forward-regexp charset-regexp nil t))
                        (intern (downcase (match-string 1)))
                      'utf-8)))
-    (if image?
-        ;; Dont' attempt to decode. Instead, just switch to the raw HTTP response buffer and
-        ;; rename it to target-buffer-name.
+    (if image-p
+        ;; Don't attempt to decode. Instead, just switch to the raw HTTP
+        ;; response buffer and rename it to `target-buffer-name.'
         (with-current-buffer raw-http-response-buffer
           ;; We have to kill the target buffer if it exists, or `rename-buffer'
           ;; will raise an error.
@@ -446,8 +461,8 @@ The buffer contains the raw HTTP response sent by the server."
             (kill-buffer target-buffer-name))
           (rename-buffer target-buffer-name)
           raw-http-response-buffer)
-      ;; Else, switch to the new, empty buffer that will contain the decoded HTTP
-      ;; response. Set its encoding, copy the content from the unencoded
+      ;; Else, switch to the new, empty buffer that will contain the decoded
+      ;; HTTP response. Set its encoding, copy the content from the unencoded
       ;; HTTP response buffer and decode.
       (let ((decoded-http-response-buffer
              (get-buffer-create
@@ -461,8 +476,7 @@ The buffer contains the raw HTTP response sent by the server."
           (condition-case nil
               (decode-coding-region (point-min) (point-max) encoding)
             (error
-             (message (concat "Error when trying to decode http response with encoding: "
-                              (symbol-name encoding)))))
+             (message "Error when trying to decode HTTP response with encoding: %s" encoding)))
           decoded-http-response-buffer)))))
 
 (defun restclient-current-min ()
@@ -532,9 +546,10 @@ The buffer contains the raw HTTP response sent by the server."
     headers))
 
 (defun restclient-get-response-headers ()
-  "Returns alist of current response headers. Works *only* with with
-hook called from `restclient-http-send-current-raw', usually
-bound to C-c C-r."
+  "Return an alist of current response headers.
+
+Works *only* with with hook called from `restclient-http-send-current-raw',
+usually bound to C-c C-r."
   (let ((start (point-min))
         (headers-end (+ 1 (string-match "\n\n" (buffer-substring-no-properties (point-min) (point-max))))))
     (restclient-parse-headers (buffer-substring-no-properties start headers-end))))
@@ -570,7 +585,7 @@ bound to C-c C-r."
   (setq restclient-var-overrides (cons (cons var-name value) restclient-var-overrides)))
 
 (defun restclient-get-var-at-point (var-name buffer-name buffer-pos)
-  (message (format "getting var %s form %s at %s" var-name buffer-name buffer-pos))
+  (message "Getting var %s form %s at %s" var-name buffer-name buffer-pos)
   (let* ((vars-at-point  (save-excursion
                            (switch-to-buffer buffer-name)
                            (goto-char buffer-pos)
@@ -664,15 +679,19 @@ bound to C-c C-r."
 
 ;;;###autoload
 (defun restclient-http-send-current (&optional raw stay-in-window suppress-response-buffer)
-  "Sends current request.
+  "Send current request.
+
 Optional argument RAW don't reformat response if t.
-Optional argument STAY-IN-WINDOW do not move focus to response buffer if t."
+Optional argument STAY-IN-WINDOW do not move focus to response buffer if t.
+Optional argument SUPPRESS-RESPONSE-BUFFER."
   (interactive)
   (restclient-http-parse-current-and-do (restclient--do-func) raw stay-in-window suppress-response-buffer))
 
 ;;;###autoload
 (defun restclient-http-send-current-raw ()
-  "Sends current request and get raw result (no reformatting or syntax highlight of XML, JSON or images)."
+  "Send current request and get raw result.
+
+No reformatting or syntax highlight of XML, JSON or images."
   (interactive)
   (restclient-http-send-current t))
 
@@ -725,7 +744,7 @@ Optional argument STAY-IN-WINDOW do not move focus to response buffer if t."
   (setq deactivate-mark nil))
 
 (defun restclient-show-info ()
-  ;; restclient-info-buffer-name
+  "Show restclient's info buffer."
   (interactive)
   (let ((vars-at-point (restclient-find-vars-before-point)))
     (cl-labels ((non-overidden-vars-at-point ()
@@ -744,7 +763,7 @@ Optional argument STAY-IN-WINDOW do not move focus to response buffer if t."
                   (insert "|--|\n\n")))
 
       (with-current-buffer (get-buffer-create restclient-info-buffer-name)
-        ;; insert our info
+        ;; Insert our info
         (erase-buffer)
 
         (insert "\Restclient Info\ \n\n")
@@ -760,7 +779,6 @@ Optional argument STAY-IN-WINDOW do not move focus to response buffer if t."
         (dolist (dv (non-overidden-vars-at-point))
           (var-row (car dv) (cdr dv)))
         (var-table-footer)
-
 
         ;; registered callbacks
         (var-table "Registered request hook types")
@@ -778,11 +796,12 @@ Optional argument STAY-IN-WINDOW do not move focus to response buffer if t."
     (switch-to-buffer-other-window restclient-info-buffer-name)))
 
 (defun restclient-narrow-to-current ()
-  "Narrow to region of current request"
+  "Narrow to region of current request."
   (interactive)
   (narrow-to-region (restclient-current-min) (restclient-current-max)))
 
 (defun restclient-toggle-body-visibility ()
+  "Toggle body visibility."
   (interactive)
   ;; If we are not on the HTTP call line, don't do anything
   (let ((at-header (save-excursion
@@ -791,11 +810,10 @@ Optional argument STAY-IN-WINDOW do not move focus to response buffer if t."
     (when at-header
       (save-excursion
         (end-of-line)
-        ;; If the overlays at this point have 'invisible set, toggling
-        ;; must make the region visible. Else it must hide the region
+        ;; If the overlays at this point have 'invisible set, toggling must make
+        ;; the region visible. Else it must hide the region
 
-        ;; This part of code is from org-hide-block-toggle method of
-        ;; Org mode
+        ;; This part of code is from org-hide-block-toggle method of Org mode
         (let ((overlays (overlays-at (point))))
           (if (memq t (mapcar
                        (lambda (o)
@@ -805,6 +823,7 @@ Optional argument STAY-IN-WINDOW do not move focus to response buffer if t."
             (outline-flag-region (point) (restclient-current-max) t)))) t)))
 
 (defun restclient-toggle-body-visibility-or-indent ()
+  "Toggle body visibility or indent."
   (interactive)
   (unless (restclient-toggle-body-visibility)
     (indent-for-tab-command)))
@@ -840,7 +859,7 @@ Optional argument STAY-IN-WINDOW do not move focus to response buffer if t."
     (define-key map (kbd "C-c n n") 'restclient-narrow-to-current)
     (define-key map (kbd "C-c C-i") 'restclient-show-info)
     map)
-  "Keymap for restclient-mode.")
+  "Keymap for `restclient-mode'.")
 
 (define-minor-mode restclient-outline-mode
   "Minor mode to allow show/hide of request bodies by TAB."
