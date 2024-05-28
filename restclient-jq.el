@@ -6,7 +6,7 @@
 ;; Author: Cameron Dorrat <cdorrat@gmail.com>
 ;; Maintainer: Cameron Dorrat <cdorrat@gmail.com>
 ;; Created: 26 Apr 2020
-;; Keywords: tools comm http jq
+;; Keywords: tools comm http
 ;; Version: 0.1
 ;; Package-Requires: ((restclient "20200502.831") (jq-mode "0.4.1") (emacs "24.4"))
 
@@ -19,6 +19,7 @@
 
 ;;; Code:
 ;;
+
 (require 'restclient)
 (require 'jq-mode)
 
@@ -28,8 +29,8 @@
   (save-excursion
     (goto-char (point-max))
     (or (and (re-search-backward "^[^/].*" nil t)
-	     (line-end-position))
-	(point-max))))
+             (line-end-position))
+        (point-max))))
 
 (defun restclient-jq-get-var (jq-pattern)
   "Find value matching the JQ-PATTERN in a restclient JSON response."
@@ -47,7 +48,7 @@
          shell-command-switch
          (format "%s %s %s"
                  jq-interactive-command
-		 "-r"
+                 "-r"
                  (shell-quote-argument jq-pattern))))
       (string-trim (buffer-string)))))
 
@@ -71,11 +72,11 @@ ARGS contains the variable name and a jq pattern to use."
   (flush-lines "^//.*") ;; jq doesnt like comments
   (jq-interactively (point-min) (restclient-jq-result-end-point)))
 
-(restclient-register-result-func
- "jq-set-var" #'restclient-jq-json-var-function
- "Set a restclient variable with the value jq expression,
+(restclient-register-result-func "jq-set-var" #'restclient-jq-json-var-function
+  "Set a restclient variable with the value jq expression,
 takes var & jq expression as args.
 eg. -> jq-set-var :my-token .token")
+
 (define-key restclient-response-mode-map  (kbd "C-c C-j") #'restclient-jq-interactive-result)
 
 (provide 'restclient-jq)

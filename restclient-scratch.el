@@ -16,6 +16,9 @@
 
 ;;; Code:
 ;;
+
+(require 'restclient)
+
 (defconst restclient-scratch-buffer-name "*restclient-scratch*")
 
 ;;;###autoload
@@ -37,6 +40,6 @@
             "# This buffer is for experimental restclient calls.\n\n")
     (current-buffer)))
 
-(provide 'restclient-scratch)
 
+(provide 'restclient-scratch)
 ;;; restclient-scratch.el ends here
