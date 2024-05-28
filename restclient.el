@@ -78,16 +78,17 @@
   :group 'restclient
   :type 'boolean)
 
-(defcustom restclient-content-type-modes '(("text/xml" . xml-mode)
-                                           ("text/plain" . text-mode)
-                                           ("application/xml" . xml-mode)
-                                           ("application/json" . js-mode)
-                                           ("image/png" . image-mode)
-                                           ("image/jpeg" . image-mode)
-                                           ("image/jpg" . image-mode)
-                                           ("image/gif" . image-mode)
-                                           ("text/html" . html-mode))
-  "An association list mapping content types to buffer modes"
+(defcustom restclient-content-type-modes
+  `(("text/xml" . xml-mode)
+    ("text/plain" . text-mode)
+    ("application/xml" . xml-mode)
+    ("application/json" . ,(if (fboundp 'json-ts-mode) 'json-ts-mode 'js-mode))
+    ("image/png" . image-mode)
+    ("image/jpeg" . image-mode)
+    ("image/jpg" . image-mode)
+    ("image/gif" . image-mode)
+    ("text/html" . html-mode))
+  "An association list mapping content types to buffer modes."
   :group 'restclient
   :type '(alist :key-type string :value-type symbol))
 
