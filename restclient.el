@@ -39,7 +39,7 @@
   :type 'boolean)
 
 (defcustom restclient-log-request t
-  "Log restclient requests to *Messages*."
+  "Log restclient requests to `restclient-log-buffer-name'."
   :group 'restclient
   :type 'boolean)
 
@@ -63,6 +63,11 @@
 
 (defcustom restclient-info-buffer-name "*Restclient Info*"
   "Name for info buffer."
+  :group 'restclient
+  :type 'string)
+
+(defcustom restclient-log-buffer-name "*Restclient Log*"
+  "Name for log buffer."
   :group 'restclient
   :type 'string)
 
@@ -276,8 +281,9 @@ PROCESS and EVENT is standard sentinel function args."
 
 (defun restclient-http-do (method url headers entity &rest handle-args)
   "Send ENTITY and HEADERS to URL as a METHOD request."
-  (if restclient-log-request
-      (message "HTTP %s %s Headers:[%s] Body:[%s]" method url headers entity))
+  (when restclient-log-request
+    (with-current-buffer (get-buffer-create restclient-log-buffer-name)
+      (insert (format "HTTP %s %s Headers:[%s] Body:[%s]\n" method url headers entity))))
   (let ((url-request-method (encode-coding-string method 'us-ascii))
         (url-request-extra-headers '())
         (url-request-data (encode-coding-string entity 'utf-8))
