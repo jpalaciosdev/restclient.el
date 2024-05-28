@@ -327,29 +327,35 @@ PROCESS and EVENT is standard sentinel function args."
 
 (defun restclient-prettify-response (method url)
   (save-excursion
-    (let ((start (point)) (guessed-mode) (end-of-headers))
+    (let ((start (point))
+          guessed-mode
+          end-of-headers)
       (while (and (not (looking-at restclient-empty-line-regexp))
-                  (eq (progn
-                        (when (looking-at restclient-content-type-regexp)
-                          (setq guessed-mode
-                                (cdr (assoc-string (concat
-                                                    (match-string-no-properties 1)
-                                                    "/"
-                                                    (match-string-no-properties 2))
-                                                   restclient-content-type-modes
-                                                   t))))
-                        (forward-line)) 0)))
+                  (zerop
+                   (progn
+                     (when (looking-at restclient-content-type-regexp)
+                       (setq guessed-mode
+                             (cdr (assoc-string
+                                   (concat
+                                    (match-string-no-properties 1)
+                                    "/"
+                                    (match-string-no-properties 2))
+                                   restclient-content-type-modes
+                                   t))))
+                     (forward-line)))))
       (setq end-of-headers (point))
       (while (and (looking-at restclient-empty-line-regexp)
-                  (eq (forward-line) 0)))
+                  (zerop (forward-line))))
       (unless guessed-mode
         (setq guessed-mode
-              (or (assoc-default nil
-                                 ;; magic mode matches
-                                 '(("<\\?xml " . xml-mode)
-                                   ("{\\s-*\"" . js-mode))
-                                 (lambda (re _dummy)
-                                   (looking-at re))) 'js-mode)))
+              (or (assoc-default
+                   nil
+                   ;; Magic mode matches
+                   '(("<\\?xml " . xml-mode)
+                     ("{\\s-*\"" . js-mode))
+                   (lambda (re _dummy)
+                     (looking-at re)))
+                  'js-mode)))
       (let ((headers (buffer-substring-no-properties start end-of-headers)))
         (when guessed-mode
           (delete-region start (point))
@@ -358,46 +364,43 @@ PROCESS and EVENT is standard sentinel function args."
                         (> (buffer-size) (* restclient-response-size-threshold
                                             restclient-threshold-multiplier)))
                    (fundamental-mode)
-                   (setq comment-start (let ((guessed-mode guessed-mode))
-                                         (with-temp-buffer
-                                           (apply  guessed-mode '())
-                                           comment-start)))
-                   (message
-                    "Response is too huge, using fundamental-mode to display it!"))
+                   (setq comment-start (with-temp-buffer
+                                         (funcall guessed-mode)
+                                         comment-start))
+                   (message "Response is too big, using `fundamental-mode' to display it!"))
                   ((and restclient-response-size-threshold
                         (> (buffer-size) restclient-response-size-threshold))
-                   (delay-mode-hooks (apply guessed-mode '()))
-                   (message
-                    "Response is too big, using bare %s to display it!" guessed-mode))
+                   (delay-mode-hooks (funcall guessed-mode))
+                   (message "Response is big, using bare `%s' to display it!" guessed-mode))
                   (t
-                   (apply guessed-mode '())))
+                   (funcall guessed-mode)))
             (if (fboundp 'font-lock-flush)
                 (font-lock-flush)
               (with-no-warnings
                 (font-lock-fontify-buffer))))
 
-          (cond
-           ((eq guessed-mode 'xml-mode)
-            (goto-char (point-min))
-            (while (search-forward-regexp "\>[ \\t]*\<" nil t)
-              (backward-char) (insert "\n"))
-            (indent-region (point-min) (point-max)))
+          (pcase guessed-mode
+            ('xml-mode
+             (goto-char (point-min))
+             (while (search-forward-regexp "\>[ \\t]*\<" nil t)
+               (backward-char) (insert "\n"))
+             (indent-region (point-min) (point-max)))
 
-           ((eq guessed-mode 'image-mode)
-            (let* ((img (buffer-string)))
-              (delete-region (point-min) (point-max))
-              (fundamental-mode)
-              (insert-image (create-image img nil t))))
+            ('image-mode
+             (let* ((img (buffer-string)))
+               (delete-region (point-min) (point-max))
+               (fundamental-mode)
+               (insert-image (create-image img nil t))))
 
-           ((eq guessed-mode 'js-mode)
-            (let ((json-special-chars (remq (assoc ?/ json-special-chars) json-special-chars))
-                  ;; Emacs 27 json.el uses `replace-buffer-contents' for
-                  ;; pretty-printing which is great because it keeps point and
-                  ;; markers intact but can be very slow with huge minimalized
-                  ;; JSON.  We don't need that here.
-                  (json-pretty-print-max-secs 0))
-              (ignore-errors (json-pretty-print-buffer)))
-            (restclient-prettify-json-unicode)))
+            ((or 'js-mode 'json-ts-mode 'json-mode)
+             (let ((json-special-chars (remq (assoc ?/ json-special-chars) json-special-chars))
+                   ;; Emacs 27 json.el uses `replace-buffer-contents' for
+                   ;; pretty-printing which is great because it keeps point and
+                   ;; markers intact but can be very slow with huge minefield
+                   ;; JSON. We don't need that here.
+                   (json-pretty-print-max-secs 0))
+               (ignore-errors (json-pretty-print-buffer)))
+             (restclient-prettify-json-unicode)))
 
           (goto-char (point-max))
           (or (eq (point) (point-min)) (insert "\n"))
@@ -485,15 +488,16 @@ Store results in TARGET-BUFFER-NAME. Make it unique if SAME-NAME is non-nil."
     (beginning-of-line)
     (if (looking-at restclient-comment-start-regexp)
         (if (re-search-forward restclient-comment-not-regexp (point-max) t)
-            (point-at-bol) (point-max))
+            (pos-bol)
+          (point-max))
       (if (re-search-backward restclient-comment-start-regexp (point-min) t)
-          (point-at-bol 2)
+          (pos-bol 2)
         (point-min)))))
 
 (defun restclient-current-max ()
   (save-excursion
     (if (re-search-forward restclient-comment-start-regexp (point-max) t)
-        (max (- (point-at-bol) 1) 1)
+        (max (- (pos-bol) 1) 1)
       (progn (goto-char (point-max))
              (if (looking-at "^$") (- (point) 1) (point))))))
 
@@ -513,15 +517,14 @@ Store results in TARGET-BUFFER-NAME. Make it unique if SAME-NAME is non-nil."
     string))
 
 (defun restclient-replace-all-in-header (replacements header)
-  (cons (car header)
-        (restclient-replace-all-in-string replacements (cdr header))))
+  (cons (car header) (restclient-replace-all-in-string replacements (cdr header))))
 
 (defun restclient-chop (text)
   (if text (replace-regexp-in-string "\n$" "" text) nil))
 
 (defun restclient-find-vars-before-point ()
-  (let ((vars nil)
-        (bound (point)))
+  (let ((bound (point))
+        vars)
     (save-excursion
       (goto-char (point-min))
       (while (search-forward-regexp restclient-var-regexp bound t)
@@ -540,7 +543,7 @@ Store results in TARGET-BUFFER-NAME. Make it unique if SAME-NAME is non-nil."
 
 (defun restclient-parse-headers (string)
   (let ((start 0)
-        (headers '()))
+        headers)
     (while (string-match restclient-header-regexp string start)
       (setq headers (cons (restclient-make-header string) headers)
             start (match-end 0)))
@@ -575,6 +578,7 @@ usually bound to C-c C-r."
        (message "Unknown restclient hook type %s" ,cb-type))))
 
 (defun restclient-register-result-func (name creation-func description)
+  (declare (indent 2))
   (let ((new-cell (cons name (cons creation-func description))))
     (setq restclient-result-handlers (cons new-cell restclient-result-handlers))))
 
@@ -661,7 +665,7 @@ usually bound to C-c C-r."
     (kill-new (concat "curl " (mapconcat #'shell-quote-argument args " ")))
     (message "curl command copied to clipboard.")))
 
-(defun restclient-elisp-result-function (args offset)
+(defun restclient-elisp-result-function (_args offset)
   (goto-char offset)
   (let ((form (macroexpand-all (read (current-buffer)))))
     (lambda ()
@@ -830,16 +834,17 @@ No reformatting or syntax highlight of XML, JSON or images."
     (indent-for-tab-command)))
 
 (defconst restclient-mode-keywords
-  (list (list restclient-method-url-regexp '(1 'restclient-method-face) '(2 'restclient-url-face))
-        (list restclient-svar-regexp '(1 'restclient-variable-name-face) '(2 'restclient-variable-string-face))
-        (list restclient-evar-regexp '(1 'restclient-variable-name-face) '(2 'restclient-variable-elisp-face t))
-        (list restclient-mvar-regexp '(1 'restclient-variable-name-face) '(2 'restclient-variable-multiline-face t))
-        (list restclient-use-var-regexp '(1 'restclient-variable-usage-face))
-        (list restclient-file-regexp '(0 'restclient-file-upload-face))
-        (list restclient-header-regexp '(1 'restclient-header-name-face t) '(2 'restclient-header-value-face t))
-        (list restclient-response-hook-regexp '(1 ' restclient-request-hook-face t)
-              '(2 'restclient-request-hook-name-face t)
-              '(3 'restclient-request-hook-args-face t))))
+  `((,restclient-method-url-regexp (1 'restclient-method-face) (2 'restclient-url-face))
+    (,restclient-svar-regexp (1 'restclient-variable-name-face) (2 'restclient-variable-string-face))
+    (,restclient-evar-regexp (1 'restclient-variable-name-face) (2 'restclient-variable-elisp-face t))
+    (,restclient-mvar-regexp (1 'restclient-variable-name-face) (2 'restclient-variable-multiline-face t))
+    (,restclient-use-var-regexp (1 'restclient-variable-usage-face))
+    (,restclient-file-regexp (0 'restclient-file-upload-face))
+    (,restclient-header-regexp (1 'restclient-header-name-face t) (2 'restclient-header-value-face t))
+    (,restclient-response-hook-regexp
+     (1 'restclient-request-hook-face t)
+     (2 'restclient-request-hook-name-face t)
+     (3 'restclient-request-hook-args-face t))))
 
 (defconst restclient-mode-syntax-table
   (let ((table (make-syntax-table)))
@@ -881,26 +886,19 @@ No reformatting or syntax highlight of XML, JSON or images."
 
 ;;;###autoload
 (define-derived-mode restclient-mode fundamental-mode "REST Client"
-  "Turn on restclient mode."
-  (set (make-local-variable 'comment-start) "# ")
-  (set (make-local-variable 'comment-start-skip) "# *")
-  (set (make-local-variable 'comment-column) 48)
+  "Turn on REST Client mode."
+  (setq-local comment-start "# "
+              comment-start-skip "# *"
+              comment-column 48
+              font-lock-defaults '(restclient-mode-keywords))
 
-  (set (make-local-variable 'font-lock-defaults) '(restclient-mode-keywords))
-  ;; We use outline-mode's method outline-flag-region to hide/show the
-  ;; body. As a part of it, it sets 'invisibility text property to
-  ;; 'outline. To get ellipsis, we need 'outline to be in
-  ;; buffer-invisibility-spec
+  ;; We use outline-mode's method outline-flag-region to hide/show the body. As
+  ;; a part of it, it sets `invisibility' text property to `outline'. To get
+  ;; ellipsis, we need `outline' to be in `buffer-invisibility-spec'.
   (add-to-invisibility-spec '(outline . t)))
 
 (add-hook 'restclient-mode-hook 'restclient-outline-mode)
 
+
 (provide 'restclient)
-
-(eval-after-load 'helm
-  '(ignore-errors (require 'restclient-helm)))
-
-(eval-after-load 'jq-mode
-  '(ignore-errors (require 'restclient-jq)))
-
 ;;; restclient.el ends here
