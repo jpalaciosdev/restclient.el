@@ -6,6 +6,8 @@
 ;; Maintainer: Pavel Kurnosov <pashky@gmail.com>
 ;; Created: 01 Apr 2012
 ;; Keywords: http
+;; Version: 0.1
+;; Package-Requires: ((cl-lib "0.5") (emacs "24.4"))
 
 ;; This file is not part of GNU Emacs.
 ;; This file is public domain software. Do what you want.
